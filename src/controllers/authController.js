@@ -86,7 +86,21 @@ exports.me = asyncHandler(async (req, res) => {
     .from("attendance").select("status, check_in, check_out")
     .eq("employee_id", req.user.id).eq("date", today).single();
 
-  res.json({ success: true, user: { id: req.user.id, email: req.user.email, ...profile, today: todayAtt || null } });
+  res.json({ success: true, user: {
+    id:                req.user.id,
+    email:             req.user.email,
+    name:              profile?.full_name || req.user.email,
+    role:              profile?.role || "employee",
+    department:        profile?.department,
+    title:             profile?.title,
+    phone:             profile?.phone,
+    emergency_contact: profile?.emergency_contact,
+    avatar_initials:   profile?.avatar_initials || "?",
+    employee_code:     profile?.employee_code,
+    hire_date:         profile?.hire_date,
+    company_id:        profile?.company_id,
+    today:             todayAtt || null,
+  }});
 });
 
 exports.logout = asyncHandler(async (req, res) => {
