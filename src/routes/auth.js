@@ -5,6 +5,7 @@ const { validate, schemas } = require("../middleware/validate");
 
 const router = Router();
 router.post("/register", validate(schemas.register), ctrl.register);
+router.post("/onboard",  ctrl.onboardCompany);
 router.post("/login",    validate(schemas.login),    ctrl.login);
 router.post("/refresh",  ctrl.refresh);
 router.post("/logout",   protect, ctrl.logout);
