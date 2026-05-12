@@ -46,6 +46,17 @@ exports.create = asyncHandler(async (req, res) => {
     company_id: company_id || req.user.company_id || null,
   }).eq("id", data.user.id);
 
+  // Seed leave balances for new employee
+  const { data: ltypes } = await supabase.from("leave_types").select("id, default_days");
+  if (ltypes?.length) {
+    const year = new Date().getFullYear();
+    const balances = ltypes.map(t => ({
+      employee_id: data.user.id, leave_type_id: t.id,
+      year, total_days: t.default_days, used_days: 0, pending_days: 0,
+    }));
+    await supabase.from("leave_balances").upsert(balances, { onConflict: "employee_id,leave_type_id,year" });
+  }
+
   res.status(201).json({ success: true, message: "Employee created", employee: {
     id: data.user.id, employee_code: "—", name, email, role: role||"employee",
     department, title, phone, emergency_contact,
