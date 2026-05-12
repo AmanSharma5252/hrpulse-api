@@ -103,3 +103,73 @@ exports.changePassword = asyncHandler(async (req, res) => {
 
   res.json({ success: true, message: "Password updated successfully" });
 });
+
+exports.onboardCompany = asyncHandler(async (req, res) => {
+  const { company, industry, size, timezone, officeAddr, lat, lng, radius,
+          adminName, adminEmail, adminPassword } = req.body;
+
+  if (!company || !adminEmail || !adminPassword)
+    return res.status(400).json({ success: false, error: "Company name, admin email and password are required" });
+
+  // 1. Create company record
+  const { data: co, error: coErr } = await supabase
+    .from("companies")
+    .insert({ name: company, industry, size, timezone: timezone || "Asia/Kolkata" })
+    .select()
+    .single();
+  if (coErr) return res.status(400).json({ success: false, error: coErr.message });
+
+  // 2. Create office location if coords provided
+  if (lat && lng) {
+    await supabase.from("office_locations").insert({
+      company_id: co.id, name: officeAddr || "Head Office",
+      lat: parseFloat(lat), lng: parseFloat(lng),
+      radius_m: parseInt(radius) || 100,
+    });
+  }
+
+  // 3. Create admin auth user
+  const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+    email: adminEmail, password: adminPassword, email_confirm: true,
+    user_metadata: { full_name: adminName },
+  });
+  if (authErr) {
+    // Rollback company
+    await supabase.from("companies").delete().eq("id", co.id);
+    return res.status(400).json({ success: false, error: authErr.message });
+  }
+
+  // 4. Update profile with admin role + company_id
+  await supabase.from("profiles").update({
+    role: "admin", full_name: adminName,
+    company_id: co.id, is_active: true,
+    avatar_initials: adminName ? adminName.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : "AD",
+  }).eq("id", authData.user.id);
+
+  // 5. Seed default leave types for this company
+  const defaultLeaves = [
+    { company_id: co.id, name: "Annual Leave",    default_days: 18, is_paid: true,  carry_forward: true  },
+    { company_id: co.id, name: "Sick Leave",       default_days: 12, is_paid: true,  carry_forward: false },
+    { company_id: co.id, name: "Casual Leave",     default_days: 6,  is_paid: true,  carry_forward: false },
+    { company_id: co.id, name: "Maternity Leave",  default_days: 90, is_paid: true,  carry_forward: false },
+    { company_id: co.id, name: "Unpaid Leave",     default_days: 0,  is_paid: false, carry_forward: false },
+  ];
+  const { data: ltypes } = await supabase.from("leave_types").insert(defaultLeaves).select();
+
+  // 6. Seed leave balances for admin
+  if (ltypes?.length) {
+    const year = new Date().getFullYear();
+    const balances = ltypes.map(t => ({
+      employee_id: authData.user.id, leave_type_id: t.id,
+      year, total_days: t.default_days, used_days: 0, pending_days: 0,
+    }));
+    await supabase.from("leave_balances").upsert(balances, { onConflict: "employee_id,leave_type_id,year" });
+  }
+
+  res.status(201).json({
+    success: true,
+    message: "Company onboarded successfully",
+    company: { id: co.id, name: co.name },
+    admin: { id: authData.user.id, email: adminEmail, name: adminName },
+  });
+});
