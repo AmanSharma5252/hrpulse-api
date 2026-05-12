@@ -17,6 +17,7 @@ const leaveRoutes          = require("./routes/leave");
 const dashboardRoutes      = require("./routes/dashboard");
 const analyticsRoutes      = require("./routes/analytics");
 const payrollRoutes        = require("./routes/payroll");
+const superAdminRoutes     = require("./routes/superAdmin");
 
 const app    = express();
 const server = http.createServer(app);
@@ -67,6 +68,7 @@ app.use("/api/v1/leave",      leaveRoutes);
 app.use("/api/v1/dashboard",  dashboardRoutes);
 app.use("/api/v1/analytics",  analyticsRoutes);
 app.use("/api/v1/payroll",    payrollRoutes);
+app.use("/api/v1/superadmin", superAdminRoutes);
 
 // ── 404 & Error ───────────────────────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ success: false, error: "Route not found" }));
