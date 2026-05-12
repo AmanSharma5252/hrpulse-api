@@ -1,7 +1,6 @@
 require("dotenv").config();
 
-const app = express();
-app.set("trust proxy", 1);
+const express     = require("express");
 const http        = require("http");
 const { Server }  = require("socket.io");
 const cors        = require("cors");
@@ -22,6 +21,8 @@ const payrollRoutes        = require("./routes/payroll");
 const app    = express();
 const server = http.createServer(app);
 
+app.set("trust proxy", 1); // Required for Render + express-rate-limit
+
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: { origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true },
@@ -40,11 +41,8 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 const origins = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(s => s.trim());
 app.use(cors({
   origin: (o, cb) => {
-    // Allow requests with no origin (mobile, curl, Render health checks)
     if (!o) return cb(null, true);
-    // Allow any vercel.app subdomain for deployed frontends
     if (o.endsWith(".vercel.app")) return cb(null, true);
-    // Allow explicitly configured origins
     if (origins.includes(o)) return cb(null, true);
     return cb(new Error("CORS blocked: " + o));
   },
