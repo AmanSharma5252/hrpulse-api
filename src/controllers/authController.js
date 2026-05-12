@@ -73,11 +73,13 @@ exports.refresh = asyncHandler(async (req, res) => {
 });
 
 exports.me = asyncHandler(async (req, res) => {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, emergency_contact")
-    .eq("id", req.user.id)
-    .single();
+ const { data: profile, error: profileErr } = await supabase
+  .from("profiles")
+  .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, is_active, emergency_contact")
+  .eq("id", data.user.id)
+  .single();
+
+console.log("PROFILE FETCH:", { userId: data.user.id, profile, profileErr });
 
   const today = new Date().toISOString().split("T")[0];
   const { data: todayAtt } = await supabase
