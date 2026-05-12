@@ -1,0 +1,12 @@
+const { Router } = require("express");
+const ctrl = require("../controllers/employeeController");
+const { protect, authorize } = require("../middleware/auth");
+const { validate, schemas }  = require("../middleware/validate");
+
+const router = Router();
+router.use(protect);
+router.get   ("/",    authorize("admin","hr","manager"), ctrl.list);
+router.post  ("/",    authorize("admin","hr"),           validate(schemas.addEmployee),    ctrl.create);
+router.patch ("/:id", authorize("admin","hr"),           validate(schemas.updateEmployee), ctrl.update);
+router.delete("/:id", authorize("admin"),                ctrl.deactivate);
+module.exports = router;
