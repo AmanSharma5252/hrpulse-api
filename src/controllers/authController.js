@@ -35,11 +35,13 @@ exports.login = asyncHandler(async (req, res) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return res.status(401).json({ success: false, error: "Invalid email or password" });
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from("profiles")
     .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, is_active, emergency_contact")
     .eq("id", data.user.id)
     .single();
+
+  console.log("LOGIN PROFILE FETCH:", { userId: data.user.id, profile, profileErr });
 
   if (profile && !profile.is_active)
     return res.status(403).json({ success: false, error: "Account deactivated" });
@@ -73,13 +75,11 @@ exports.refresh = asyncHandler(async (req, res) => {
 });
 
 exports.me = asyncHandler(async (req, res) => {
- const { data: profile, error: profileErr } = await supabase
-  .from("profiles")
-  .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, is_active, emergency_contact")
-  .eq("id", data.user.id)
-  .single();
-
-console.log("PROFILE FETCH:", { userId: data.user.id, profile, profileErr });
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, emergency_contact")
+    .eq("id", req.user.id)
+    .single();
 
   const today = new Date().toISOString().split("T")[0];
   const { data: todayAtt } = await supabase
@@ -136,7 +136,6 @@ exports.onboardCompany = asyncHandler(async (req, res) => {
     user_metadata: { full_name: adminName },
   });
   if (authErr) {
-    // Rollback company
     await supabase.from("companies").delete().eq("id", co.id);
     return res.status(400).json({ success: false, error: authErr.message });
   }
