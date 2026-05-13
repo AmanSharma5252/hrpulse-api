@@ -35,16 +35,25 @@ exports.login = asyncHandler(async (req, res) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return res.status(401).json({ success: false, error: "Invalid email or password" });
 
-  const { data: profile, error: profileErr } = await supabase
+  const { data: profile } = await supabase
     .from("profiles")
     .select("full_name, role, department, title, phone, avatar_initials, employee_code, hire_date, company_id, is_active, emergency_contact")
     .eq("id", data.user.id)
     .single();
 
-  console.log("LOGIN PROFILE FETCH:", { userId: data.user.id, profile, profileErr });
-
   if (profile && !profile.is_active)
     return res.status(403).json({ success: false, error: "Account deactivated" });
+
+  // Fetch plan/subscription for this company
+  let plan = null;
+  if (profile?.company_id) {
+    const { data: sub } = await supabase
+      .from("company_subscriptions")
+      .select("status, trial_ends, billing_end, plans(name, display_name, features, max_employees)")
+      .eq("company_id", profile.company_id)
+      .single();
+    if (sub) plan = { ...sub.plans, status: sub.status, trial_ends: sub.trial_ends, billing_end: sub.billing_end };
+  }
 
   const user = {
     id:                data.user.id,
@@ -59,6 +68,7 @@ exports.login = asyncHandler(async (req, res) => {
     employee_code:     profile?.employee_code,
     hire_date:         profile?.hire_date,
     company_id:        profile?.company_id,
+    plan:              plan,
   };
 
   res.json({ success: true, access_token: data.session.access_token, refresh_token: data.session.refresh_token, user });
@@ -86,21 +96,7 @@ exports.me = asyncHandler(async (req, res) => {
     .from("attendance").select("status, check_in, check_out")
     .eq("employee_id", req.user.id).eq("date", today).single();
 
-  res.json({ success: true, user: {
-    id:                req.user.id,
-    email:             req.user.email,
-    name:              profile?.full_name || req.user.email,
-    role:              profile?.role || "employee",
-    department:        profile?.department,
-    title:             profile?.title,
-    phone:             profile?.phone,
-    emergency_contact: profile?.emergency_contact,
-    avatar_initials:   profile?.avatar_initials || "?",
-    employee_code:     profile?.employee_code,
-    hire_date:         profile?.hire_date,
-    company_id:        profile?.company_id,
-    today:             todayAtt || null,
-  }});
+  res.json({ success: true, user: { id: req.user.id, email: req.user.email, ...profile, today: todayAtt || null } });
 });
 
 exports.logout = asyncHandler(async (req, res) => {
@@ -150,6 +146,7 @@ exports.onboardCompany = asyncHandler(async (req, res) => {
     user_metadata: { full_name: adminName },
   });
   if (authErr) {
+    // Rollback company
     await supabase.from("companies").delete().eq("id", co.id);
     return res.status(400).json({ success: false, error: authErr.message });
   }
