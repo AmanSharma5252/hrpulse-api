@@ -17,12 +17,10 @@ const leaveRoutes          = require("./routes/leave");
 const dashboardRoutes      = require("./routes/dashboard");
 const analyticsRoutes      = require("./routes/analytics");
 const payrollRoutes        = require("./routes/payroll");
-const superAdminRoutes     = require("./routes/superAdmin");
+const superRoutes          = require("./routes/superAdmin");
 
 const app    = express();
 const server = http.createServer(app);
-
-app.set("trust proxy", 1); // Required for Render + express-rate-limit
 
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 const io = new Server(server, {
@@ -42,8 +40,11 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 const origins = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(s => s.trim());
 app.use(cors({
   origin: (o, cb) => {
+    // Allow requests with no origin (mobile, curl, Render health checks)
     if (!o) return cb(null, true);
+    // Allow any vercel.app subdomain for deployed frontends
     if (o.endsWith(".vercel.app")) return cb(null, true);
+    // Allow explicitly configured origins
     if (origins.includes(o)) return cb(null, true);
     return cb(new Error("CORS blocked: " + o));
   },
@@ -68,7 +69,7 @@ app.use("/api/v1/leave",      leaveRoutes);
 app.use("/api/v1/dashboard",  dashboardRoutes);
 app.use("/api/v1/analytics",  analyticsRoutes);
 app.use("/api/v1/payroll",    payrollRoutes);
-app.use("/api/v1/superadmin", superAdminRoutes);
+app.use("/api/v1/super",      superRoutes);
 
 // ── 404 & Error ───────────────────────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ success: false, error: "Route not found" }));
