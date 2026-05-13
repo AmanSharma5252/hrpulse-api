@@ -51,25 +51,27 @@ exports.updateSalary = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { basic_salary, hra_pct, ta_amount, special_allowance, bonus, bank_account, bank_ifsc, bank_name } = req.body;
 
-  const updates = { updated_at: new Date().toISOString() };
-  if (basic_salary      != null) updates.basic_salary      = basic_salary;
-  if (hra_pct           != null) updates.hra_pct           = hra_pct;
-  if (ta_amount         != null) updates.ta_amount         = ta_amount;
-  if (special_allowance != null) updates.special_allowance = special_allowance;
-  if (bonus             != null) updates.bonus             = bonus;
+  const updates = {};
+  if (basic_salary      != null) updates.basic_salary      = parseFloat(basic_salary);
+  if (hra_pct           != null) updates.hra_pct           = parseFloat(hra_pct);
+  if (ta_amount         != null) updates.ta_amount         = parseFloat(ta_amount);
+  if (special_allowance != null) updates.special_allowance = parseFloat(special_allowance);
+  if (bonus             != null) updates.bonus             = parseFloat(bonus);
   if (bank_account      != null) updates.bank_account      = bank_account;
   if (bank_ifsc         != null) updates.bank_ifsc         = bank_ifsc;
   if (bank_name         != null) updates.bank_name         = bank_name;
 
-  const { data, error } = await supabase
+  console.log("SALARY UPDATE ATTEMPT:", { id, updates });
+
+  const { error } = await supabase
     .from("profiles")
     .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+    .eq("id", id);
+
+  console.log("SALARY UPDATE RESULT:", { error });
 
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, message: "Salary updated", employee: data });
+  res.json({ success: true, message: "Salary updated" });
 });
 
 // GET /api/v1/payroll/summary?month=5&year=2026
@@ -79,7 +81,6 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
   const month = parseInt(req.query.month || now.getMonth() + 1);
   const year  = parseInt(req.query.year  || now.getFullYear());
 
-  // Get all active employees with salary
   const { data: employees } = await supabase
     .from("profiles")
     .select("id, full_name, role, department, title, avatar_initials, employee_code, basic_salary, hra_pct, ta_amount, special_allowance, bonus, bank_account, bank_ifsc, bank_name")
@@ -87,7 +88,6 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
     .eq("is_active", true)
     .order("full_name");
 
-  // Get company deduction config
   const { data: company } = await supabase
     .from("companies")
     .select("pf_pct, tax_pct, esic_pct, name")
@@ -98,7 +98,6 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
   const tax_pct  = company?.tax_pct  ?? 10;
   const esic_pct = company?.esic_pct ?? 0;
 
-  // Get attendance for the month
   const from = `${year}-${String(month).padStart(2,"0")}-01`;
   const to   = `${year}-${String(month).padStart(2,"0")}-31`;
 
@@ -108,7 +107,6 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
     .eq("company_id", company_id)
     .gte("date", from).lte("date", to);
 
-  // Get existing payroll records
   const { data: payrollRecords } = await supabase
     .from("payroll")
     .select("*")
@@ -116,7 +114,6 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
     .eq("month", month)
     .eq("year", year);
 
-  // Working days in month (approx)
   const daysInMonth = new Date(year, month, 0).getDate();
   const workingDays = Math.round(daysInMonth * 5 / 7);
 
@@ -127,21 +124,20 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
     const absent    = Math.max(0, workingDays - present - onLeave);
     const totalMins = empAtt.reduce((s, a) => s + (a.work_minutes || 0), 0);
 
-    const basic    = parseFloat(emp.basic_salary) || 0;
-    const hra      = basic * (parseFloat(emp.hra_pct) || 40) / 100;
-    const ta       = parseFloat(emp.ta_amount) || 1600;
-    const special  = parseFloat(emp.special_allowance) || 0;
-    const bonus    = parseFloat(emp.bonus) || 0;
-    const gross    = basic + hra + ta + special + bonus;
+    const basic   = parseFloat(emp.basic_salary) || 0;
+    const hra     = basic * (parseFloat(emp.hra_pct) || 40) / 100;
+    const ta      = parseFloat(emp.ta_amount) || 1600;
+    const special = parseFloat(emp.special_allowance) || 0;
+    const bonus   = parseFloat(emp.bonus) || 0;
+    const gross   = basic + hra + ta + special + bonus;
 
-    // Per-day salary for absent deduction
-    const perDay         = basic / workingDays;
-    const absentDeduct   = perDay * absent;
-    const pfDeduct       = basic * pf_pct / 100;
-    const taxDeduct      = gross * tax_pct / 100;
-    const esicDeduct     = gross * esic_pct / 100;
-    const totalDeduct    = absentDeduct + pfDeduct + taxDeduct + esicDeduct;
-    const netPay         = Math.max(0, gross - totalDeduct);
+    const perDay       = workingDays > 0 ? basic / workingDays : 0;
+    const absentDeduct = perDay * absent;
+    const pfDeduct     = basic * pf_pct / 100;
+    const taxDeduct    = gross * tax_pct / 100;
+    const esicDeduct   = gross * esic_pct / 100;
+    const totalDeduct  = absentDeduct + pfDeduct + taxDeduct + esicDeduct;
+    const netPay       = Math.max(0, gross - totalDeduct);
 
     const existing = (payrollRecords || []).find(p => p.employee_id === emp.id);
 
@@ -192,18 +188,16 @@ exports.markPaid = asyncHandler(async (req, res) => {
   const { company_id } = req.user;
   const { employee_id, month, year, gross, total_deductions, net_pay, days_present, days_absent, basic_salary } = req.body;
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("payroll")
     .upsert({
       employee_id, company_id, month, year,
       basic_salary, gross, total_deductions, net_pay,
       days_present, days_absent, status: "paid",
-    }, { onConflict: "employee_id,month,year" })
-    .select()
-    .single();
+    }, { onConflict: "employee_id,month,year" });
 
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, message: "Marked as paid", record: data });
+  res.json({ success: true, message: "Marked as paid" });
 });
 
 // POST /api/v1/payroll/mark-all-paid
@@ -232,7 +226,6 @@ exports.sendPayslip = asyncHandler(async (req, res) => {
   const { employee_id, month, year } = req.body;
   const { company_id } = req.user;
 
-  // Get employee email
   const { data: authUser } = await supabase.auth.admin.getUserById(employee_id);
   const { data: profile } = await supabase
     .from("profiles")
@@ -249,7 +242,6 @@ exports.sendPayslip = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: "Employee email not found" });
   }
 
-  // For now log — integrate with SendGrid/Resend for actual email
   console.log(`PAYSLIP EMAIL → ${authUser.user.email} for ${profile?.full_name} | ${company?.name} | ${month}/${year}`);
 
   res.json({
@@ -259,13 +251,13 @@ exports.sendPayslip = asyncHandler(async (req, res) => {
   });
 });
 
-// PATCH /api/v1/payroll/bank-details (employee updates own bank details)
+// PATCH /api/v1/payroll/bank-details
 exports.updateBankDetails = asyncHandler(async (req, res) => {
   const { bank_account, bank_ifsc, bank_name } = req.body;
 
   const { error } = await supabase
     .from("profiles")
-    .update({ bank_account, bank_ifsc, bank_name, updated_at: new Date().toISOString() })
+    .update({ bank_account, bank_ifsc, bank_name })
     .eq("id", req.user.id);
 
   if (error) return res.status(500).json({ success: false, error: error.message });
