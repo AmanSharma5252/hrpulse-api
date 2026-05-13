@@ -9,21 +9,21 @@ const helmet      = require("helmet");
 const compression = require("compression");
 const rateLimit   = require("express-rate-limit");
 
-const { errorHandler }    = require("./middleware/errorHandler");
-const authRoutes           = require("./routes/auth");
-const attendanceRoutes     = require("./routes/attendance");
-const employeeRoutes       = require("./routes/employees");
-const leaveRoutes          = require("./routes/leave");
-const dashboardRoutes      = require("./routes/dashboard");
-const payrollRoutes        = require("./routes/payroll");
-const superRoutes          = require("./routes/superAdmin");
-const companyRoutes        = require("./routes/company");
-const analyticsRoutes      = require("./routes/analytics");
-const payrollRoutes        = require("./routes/payroll");
-const superRoutes          = require("./routes/superAdmin");
+const { errorHandler }  = require("./middleware/errorHandler");
+const authRoutes        = require("./routes/auth");
+const attendanceRoutes  = require("./routes/attendance");
+const employeeRoutes    = require("./routes/employees");
+const leaveRoutes       = require("./routes/leave");
+const dashboardRoutes   = require("./routes/dashboard");
+const analyticsRoutes   = require("./routes/analytics");
+const payrollRoutes     = require("./routes/payroll");
+const superRoutes       = require("./routes/superAdmin");
+const companyRoutes     = require("./routes/company");
 
 const app    = express();
 const server = http.createServer(app);
+
+app.set("trust proxy", 1);
 
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 const io = new Server(server, {
@@ -43,11 +43,8 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 const origins = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(s => s.trim());
 app.use(cors({
   origin: (o, cb) => {
-    // Allow requests with no origin (mobile, curl, Render health checks)
     if (!o) return cb(null, true);
-    // Allow any vercel.app subdomain for deployed frontends
     if (o.endsWith(".vercel.app")) return cb(null, true);
-    // Allow explicitly configured origins
     if (origins.includes(o)) return cb(null, true);
     return cb(new Error("CORS blocked: " + o));
   },
@@ -67,15 +64,13 @@ app.get("/health", (_, res) => res.json({ status: "ok" }));
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/v1/auth",       authLimiter, authRoutes);
 app.use("/api/v1/attendance", attendanceRoutes);
-app.use("/api/v1/payroll",    payrollRoutes);
-app.use("/api/v1/super",      superRoutes);
-app.use("/api/v1/company",    companyRoutes);
 app.use("/api/v1/employees",  employeeRoutes);
 app.use("/api/v1/leave",      leaveRoutes);
 app.use("/api/v1/dashboard",  dashboardRoutes);
 app.use("/api/v1/analytics",  analyticsRoutes);
 app.use("/api/v1/payroll",    payrollRoutes);
 app.use("/api/v1/super",      superRoutes);
+app.use("/api/v1/company",    companyRoutes);
 
 // ── 404 & Error ───────────────────────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ success: false, error: "Route not found" }));
