@@ -52,11 +52,11 @@ exports.updateSalary = asyncHandler(async (req, res) => {
   const { basic_salary, hra_pct, ta_amount, special_allowance, bonus, bank_account, bank_ifsc, bank_name } = req.body;
 
   const updates = {};
-  if (basic_salary      != null) updates.basic_salary      = parseFloat(basic_salary);
-  if (hra_pct           != null) updates.hra_pct           = parseFloat(hra_pct);
-  if (ta_amount         != null) updates.ta_amount         = parseFloat(ta_amount);
-  if (special_allowance != null) updates.special_allowance = parseFloat(special_allowance);
-  if (bonus             != null) updates.bonus             = parseFloat(bonus);
+  if (basic_salary      != null) updates.basic_salary      = parseFloat(basic_salary) || 0;
+  if (hra_pct           != null) updates.hra_pct           = parseFloat(hra_pct) || 0;
+  if (ta_amount         != null) updates.ta_amount         = parseFloat(ta_amount) || 0;
+  if (special_allowance != null) updates.special_allowance = parseFloat(special_allowance) || 0;
+  if (bonus             != null) updates.bonus             = parseFloat(bonus) || 0;
   if (bank_account      != null) updates.bank_account      = bank_account;
   if (bank_ifsc         != null) updates.bank_ifsc         = bank_ifsc;
   if (bank_name         != null) updates.bank_name         = bank_name;
@@ -125,8 +125,8 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
     const totalMins = empAtt.reduce((s, a) => s + (a.work_minutes || 0), 0);
 
     const basic   = parseFloat(emp.basic_salary) || 0;
-    const hra     = basic * (parseFloat(emp.hra_pct) || 40) / 100;
-    const ta      = parseFloat(emp.ta_amount) || 1600;
+    const hra     = basic * (parseFloat(emp.hra_pct) || 0) / 100;
+    const ta      = parseFloat(emp.ta_amount) || 0;
     const special = parseFloat(emp.special_allowance) || 0;
     const bonus   = parseFloat(emp.bonus) || 0;
     const gross   = basic + hra + ta + special + bonus;
@@ -167,7 +167,7 @@ exports.getPayrollSummary = asyncHandler(async (req, res) => {
       working_days:     workingDays,
       hours_worked:     Math.round(totalMins / 60),
       status:           existing?.status || "draft",
-      hra_pct:          emp.hra_pct || 40,
+      hra_pct:          parseFloat(emp.hra_pct) || 0,
       pf_pct, tax_pct, esic_pct,
     };
   });
