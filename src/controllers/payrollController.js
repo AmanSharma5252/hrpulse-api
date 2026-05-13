@@ -61,16 +61,15 @@ exports.updateSalary = asyncHandler(async (req, res) => {
   if (bank_ifsc         != null) updates.bank_ifsc         = bank_ifsc;
   if (bank_name         != null) updates.bank_name         = bank_name;
 
-  const { data, error } = await supabase
+ const { data, error } = await supabase
     .from("profiles")
     .update(updates)
     .eq("id", id)
     .select()
     .single();
 
+  console.log("SALARY UPDATE:", { id, updates, error });
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, message: "Salary updated", employee: data });
-});
 
 // GET /api/v1/payroll/summary?month=5&year=2026
 exports.getPayrollSummary = asyncHandler(async (req, res) => {
