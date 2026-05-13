@@ -47,7 +47,8 @@ exports.create = asyncHandler(async (req, res) => {
   }).eq("id", data.user.id);
 
   // Seed leave balances for new employee
-  const { data: ltypes } = await supabase.from("leave_types").select("id, default_days");
+  const { data: ltypes } = await supabase.from("leave_types").select("id, default_days")
+    .eq("company_id", req.user.company_id);
   if (ltypes?.length) {
     const year = new Date().getFullYear();
     const balances = ltypes.map(t => ({
@@ -69,14 +70,14 @@ exports.update = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, role, department, title, phone, emergency_contact, hire_date } = req.body;
 
-  const updates = { updated_at: new Date().toISOString() };
-  if (name)              updates.full_name          = name;
-  if (role)              updates.role               = role;
-  if (department!=null)  updates.department         = department;
-  if (title!=null)       updates.title              = title;
-  if (phone!=null)       updates.phone              = phone;
-  if (emergency_contact!=null) updates.emergency_contact = emergency_contact;
-  if (hire_date!=null)   updates.hire_date          = hire_date;
+  const updates = {};
+  if (name)                    updates.full_name          = name;
+  if (role)                    updates.role               = role;
+  if (department != null)      updates.department         = department;
+  if (title      != null)      updates.title              = title;
+  if (phone      != null)      updates.phone              = phone;
+  if (emergency_contact != null) updates.emergency_contact = emergency_contact;
+  if (hire_date  != null)      updates.hire_date          = hire_date;
 
   const { data, error } = await supabase.from("profiles").update(updates).eq("id", id).select().single();
   if (error) return res.status(500).json({ success: false, error: error.message });
@@ -94,4 +95,17 @@ exports.deactivate = asyncHandler(async (req, res) => {
   if (id === req.user.id) return res.status(400).json({ success: false, error: "Cannot deactivate yourself" });
   await supabase.from("profiles").update({ is_active: false }).eq("id", id);
   res.json({ success: true, message: "Employee deactivated" });
+});
+
+exports.updateMyContact = asyncHandler(async (req, res) => {
+  const { phone, emergency_contact } = req.body;
+  const updates = {};
+  if (phone             != null) updates.phone             = phone;
+  if (emergency_contact != null) updates.emergency_contact = emergency_contact;
+
+  const { error } = await supabase.from("profiles")
+    .update(updates).eq("id", req.user.id);
+
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  res.json({ success: true, message: "Contact details updated" });
 });
