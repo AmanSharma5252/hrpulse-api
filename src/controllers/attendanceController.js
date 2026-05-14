@@ -85,8 +85,14 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
+  // DEBUG — remove after fix confirmed
+  console.log("=== CHECKIN DEBUG ===", { userId, email, company_id });
+
   // ✅ FIX: Resolve correct employee_id via email → employees table
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
+
+  // DEBUG
+  console.log("=== RESOLVED ===", { employeeId, found });
 
   if (!found) {
     return res.status(400).json({
