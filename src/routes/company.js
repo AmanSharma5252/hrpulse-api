@@ -1,12 +1,10 @@
 const { Router } = require("express");
-const ctrl = require("../controllers/companyController");
+const ctrl = require("../controllers/companiesController");
 const { protect, authorize } = require("../middleware/auth");
 
 const router = Router();
 router.use(protect);
-
-router.get  ("/settings",      ctrl.getSettings);
-router.patch("/settings",      authorize("admin", "hr"), ctrl.updateSettings);
-router.post ("/upload-asset",  authorize("admin"),       ctrl.uploadAsset);
-
+router.get   ("/",        authorize("admin","hr","super_admin"), ctrl.list);
+router.patch ("/:id/plan",   authorize("super_admin"), ctrl.updatePlan);
+router.patch ("/:id/status", authorize("super_admin"), ctrl.updateStatus);
 module.exports = router;

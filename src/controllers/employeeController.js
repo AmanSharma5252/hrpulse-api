@@ -2,11 +2,14 @@ const supabase     = require("../config/supabase");
 const asyncHandler = require("../utils/asyncHandler");
 
 exports.list = asyncHandler(async (req, res) => {
-  const { company_id } = req.user;
+  const { company_id, role } = req.user;
   const { is_active = "true", limit = 500 } = req.query;
+  const isSuperAdmin = role === "super_admin";
 
   let q = supabase.from("profiles").select("*", { count: "exact" })
-    .eq("company_id", company_id).order("full_name").limit(+limit);
+    .order("full_name").limit(+limit);
+  // Super admin sees all companies; others scoped to their company
+  if (!isSuperAdmin) q = q.eq("company_id", company_id);
   if (is_active !== "all") q = q.eq("is_active", is_active === "true");
 
   const { data, error, count } = await q;
@@ -25,6 +28,7 @@ exports.list = asyncHandler(async (req, res) => {
     avatar_initials:   p.avatar_initials,
     hire_date:         p.hire_date,
     is_active:         p.is_active,
+    company_id:        p.company_id,
   }));
 
   res.json({ success: true, employees, total: count });
@@ -47,8 +51,7 @@ exports.create = asyncHandler(async (req, res) => {
   }).eq("id", data.user.id);
 
   // Seed leave balances for new employee
-  const { data: ltypes } = await supabase.from("leave_types").select("id, default_days")
-    .eq("company_id", req.user.company_id);
+  const { data: ltypes } = await supabase.from("leave_types").select("id, default_days");
   if (ltypes?.length) {
     const year = new Date().getFullYear();
     const balances = ltypes.map(t => ({
@@ -69,15 +72,19 @@ exports.create = asyncHandler(async (req, res) => {
 exports.update = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, role, department, title, phone, emergency_contact, hire_date } = req.body;
+  // Only super_admin can assign super_admin role
+  if (role === "super_admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ success: false, error: "Only super_admin can assign super_admin role" });
+  }
 
-  const updates = {};
-  if (name)                    updates.full_name          = name;
-  if (role)                    updates.role               = role;
-  if (department != null)      updates.department         = department;
-  if (title      != null)      updates.title              = title;
-  if (phone      != null)      updates.phone              = phone;
-  if (emergency_contact != null) updates.emergency_contact = emergency_contact;
-  if (hire_date  != null)      updates.hire_date          = hire_date;
+  const updates = { updated_at: new Date().toISOString() };
+  if (name)              updates.full_name          = name;
+  if (role)              updates.role               = role;
+  if (department!=null)  updates.department         = department;
+  if (title!=null)       updates.title              = title;
+  if (phone!=null)       updates.phone              = phone;
+  if (emergency_contact!=null) updates.emergency_contact = emergency_contact;
+  if (hire_date!=null)   updates.hire_date          = hire_date;
 
   const { data, error } = await supabase.from("profiles").update(updates).eq("id", id).select().single();
   if (error) return res.status(500).json({ success: false, error: error.message });
@@ -95,17 +102,4 @@ exports.deactivate = asyncHandler(async (req, res) => {
   if (id === req.user.id) return res.status(400).json({ success: false, error: "Cannot deactivate yourself" });
   await supabase.from("profiles").update({ is_active: false }).eq("id", id);
   res.json({ success: true, message: "Employee deactivated" });
-});
-
-exports.updateMyContact = asyncHandler(async (req, res) => {
-  const { phone, emergency_contact } = req.body;
-  const updates = {};
-  if (phone             != null) updates.phone             = phone;
-  if (emergency_contact != null) updates.emergency_contact = emergency_contact;
-
-  const { error } = await supabase.from("profiles")
-    .update(updates).eq("id", req.user.id);
-
-  if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, message: "Contact details updated" });
 });

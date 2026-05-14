@@ -1,86 +1,54 @@
 const supabase     = require("../config/supabase");
 const asyncHandler = require("../utils/asyncHandler");
 
-// GET /api/v1/company/settings
-exports.getSettings = asyncHandler(async (req, res) => {
-  const { company_id } = req.user;
+exports.list = asyncHandler(async (req, res) => {
+  const { role, company_id } = req.user;
+  const isSuperAdmin = role === "super_admin";
 
-  const { data, error } = await supabase
-    .from("companies")
-    .select("id, name, logo_url, signature_url, address, phone, email, website, pf_pct, tax_pct, esic_pct")
-    .eq("id", company_id)
-    .single();
+  // Super admin gets all companies; others get only their own
+  let q = supabase.from("companies").select("*").order("created_at", { ascending: false });
+  if (!isSuperAdmin) q = q.eq("id", company_id);
 
+  const { data, error } = await q;
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, company: data });
+
+  // For each company, get employee count and admin name
+  const enriched = await Promise.all((data||[]).map(async co => {
+    const { count } = await supabase.from("profiles").select("*", { count:"exact", head:true }).eq("company_id", co.id).eq("is_active", true);
+    const { data: admins } = await supabase.from("profiles").select("full_name").eq("company_id", co.id).in("role", ["admin","super_admin"]).limit(1);
+    return {
+      id:            co.id,
+      name:          co.name,
+      industry:      co.industry,
+      size:          co.size,
+      timezone:      co.timezone,
+      created_at:    co.created_at,
+      employee_count: count || 0,
+      admin_name:    admins?.[0]?.full_name || "—",
+    };
+  }));
+
+  res.json({ success: true, companies: enriched });
 });
 
-// PATCH /api/v1/company/settings
-// Updates name, address, phone, email, website, logo_url, signature_url
-exports.updateSettings = asyncHandler(async (req, res) => {
-  const { company_id } = req.user;
-  const { name, address, phone, email, website, logo_url, signature_url } = req.body;
+exports.updatePlan = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plan } = req.body;
+  const VALID_PLANS = ["starter","growth","enterprise"];
+  if (!VALID_PLANS.includes(plan)) return res.status(400).json({ success: false, error: "Invalid plan" });
 
-  const updates = {};
-  if (name          != null) updates.name           = name;
-  if (address       != null) updates.address        = address;
-  if (phone         != null) updates.phone          = phone;
-  if (email         != null) updates.email          = email;
-  if (website       != null) updates.website        = website;
-  if (logo_url      != null) updates.logo_url       = logo_url;
-  if (signature_url != null) updates.signature_url  = signature_url;
-
-  const { error } = await supabase
-    .from("companies")
-    .update(updates)
-    .eq("id", company_id);
-
+  const { error } = await supabase.from("companies").update({ plan }).eq("id", id);
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, message: "Company settings updated" });
+
+  res.json({ success: true, message: "Plan updated to " + plan });
 });
 
-// POST /api/v1/company/upload-asset
-// Accepts { type: "logo" | "signature", base64: "data:image/png;base64,..." }
-// Uploads to Supabase Storage bucket "company-assets" and saves the URL
-exports.uploadAsset = asyncHandler(async (req, res) => {
-  const { company_id } = req.user;
-  const { type, base64 } = req.body;
+exports.updateStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { active } = req.body;
 
-  if (!["logo", "signature"].includes(type)) {
-    return res.status(400).json({ success: false, error: "type must be logo or signature" });
-  }
-  if (!base64) {
-    return res.status(400).json({ success: false, error: "base64 is required" });
-  }
+  const { error } = await supabase.from("companies").update({ is_active: active }).eq("id", id);
+  if (error) return res.status(500).json({ success: false, error: error.message });
 
-  // Strip the data URI prefix and get the mime type
-  const matches = base64.match(/^data:(.+);base64,(.+)$/);
-  if (!matches) return res.status(400).json({ success: false, error: "Invalid base64 format" });
-
-  const mimeType  = matches[1]; // e.g. image/png
-  const ext       = mimeType.split("/")[1] || "png";
-  const buffer    = Buffer.from(matches[2], "base64");
-  const filePath  = `${company_id}/${type}.${ext}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("company-assets")
-    .upload(filePath, buffer, {
-      contentType: mimeType,
-      upsert: true,  // overwrite if already exists
-    });
-
-  if (uploadError) return res.status(500).json({ success: false, error: uploadError.message });
-
-  // Get the public URL
-  const { data: urlData } = supabase.storage
-    .from("company-assets")
-    .getPublicUrl(filePath);
-
-  const publicUrl = urlData.publicUrl;
-
-  // Save the URL to the companies table
-  const column = type === "logo" ? "logo_url" : "signature_url";
-  await supabase.from("companies").update({ [column]: publicUrl }).eq("id", company_id);
-
-  res.json({ success: true, url: publicUrl, message: `${type} uploaded successfully` });
+  res.json({ success: true, message: active ? "Company activated" : "Company suspended" });
 });
