@@ -17,7 +17,7 @@ const leaveRoutes          = require("./routes/leave");
 const dashboardRoutes      = require("./routes/dashboard");
 const analyticsRoutes      = require("./routes/analytics");
 const payrollRoutes        = require("./routes/payroll");
-const companiesRoutes      = require("./routes/companies");
+const companiesRoutes      = require('./routes/company');
 
 const app    = express();
 const server = http.createServer(app);
