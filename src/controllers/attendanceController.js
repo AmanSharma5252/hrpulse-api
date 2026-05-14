@@ -17,6 +17,30 @@ async function uploadSelfie(base64, userId, type = "in") {
   } catch { return null; }
 }
 
+// ✅ FIX: Resolve correct employee_id for attendance FK (points to employees.id)
+// Uses email as the bridge between profiles (auth) and employees (custom table)
+async function resolveEmployeeId(authUserId, userEmail) {
+  // Primary: look up employees table by email
+  if (userEmail) {
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("email", userEmail)
+      .single();
+    if (emp?.id) return { id: emp.id, found: true };
+  }
+
+  // Fallback: try direct id match
+  const { data: empById } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("id", authUserId)
+    .single();
+  if (empById?.id) return { id: empById.id, found: true };
+
+  return { id: authUserId, found: false };
+}
+
 exports.getMyAttendance = asyncHandler(async (req, res) => {
   const now   = new Date();
   const month = parseInt(req.query.month || now.getMonth() + 1);
@@ -25,8 +49,10 @@ exports.getMyAttendance = asyncHandler(async (req, res) => {
   const from  = `${year}-${String(month).padStart(2,"0")}-01`;
   const to    = `${year}-${String(month).padStart(2,"0")}-31`;
 
+  const { id: employeeId } = await resolveEmployeeId(req.user.id, req.user.email);
+
   const { data, error } = await supabase.from("attendance").select("*")
-    .eq("employee_id", req.user.id)
+    .eq("employee_id", employeeId)
     .gte("date", from).lte("date", to)
     .order("date", { ascending: false }).limit(limit);
 
@@ -41,8 +67,10 @@ exports.getMySummary = asyncHandler(async (req, res) => {
   const from  = `${year}-${String(month).padStart(2,"0")}-01`;
   const to    = `${year}-${String(month).padStart(2,"0")}-31`;
 
+  const { id: employeeId } = await resolveEmployeeId(req.user.id, req.user.email);
+
   const { data } = await supabase.from("attendance").select("status, work_minutes")
-    .eq("employee_id", req.user.id).gte("date", from).lte("date", to);
+    .eq("employee_id", employeeId).gte("date", from).lte("date", to);
 
   res.json({ success: true, summary: {
     present:       (data||[]).filter(r => r.status === "present").length,
@@ -54,13 +82,28 @@ exports.getMySummary = asyncHandler(async (req, res) => {
 });
 
 exports.checkIn = asyncHandler(async (req, res) => {
-  const { id: userId, company_id } = req.user;
+  const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
+  // ✅ FIX: Resolve correct employee_id via email → employees table
+  const { id: employeeId, found } = await resolveEmployeeId(userId, email);
+
+  if (!found) {
+    return res.status(400).json({
+      success: false,
+      error: "Employee record not found. Please ask your administrator to re-add you as an employee.",
+    });
+  }
+
+  // Check already clocked in
   const { data: existing } = await supabase.from("attendance")
-    .select("id, check_in").eq("employee_id", userId).eq("date", date).single();
+    .select("id, check_in")
+    .eq("employee_id", employeeId)
+    .eq("date", date)
+    .single();
   if (existing?.check_in) return res.status(400).json({ success: false, error: "Already clocked in today" });
 
+  // GPS validation
   const { latitude: lat, longitude: lng } = req.body;
   if (lat != null && lng != null) {
     const office = await getOfficeLocation(supabase, company_id);
@@ -75,9 +118,15 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const status    = getStatus(now);
 
   const { data, error } = await supabase.from("attendance").upsert({
-    employee_id: userId, company_id, date,
-    check_in: now.toISOString(), latitude: lat || null, longitude: lng || null,
-    selfie_in, status, note: req.body.note || null,
+    employee_id: employeeId,  // ✅ employees.id — satisfies FK constraint
+    company_id,
+    date,
+    check_in:  now.toISOString(),
+    latitude:  lat || null,
+    longitude: lng || null,
+    selfie_in,
+    status,
+    note: req.body.note || null,
   }, { onConflict: "employee_id,date" }).select().single();
 
   if (error) return res.status(500).json({ success: false, error: error.message });
@@ -87,21 +136,36 @@ exports.checkIn = asyncHandler(async (req, res) => {
 });
 
 exports.checkOut = asyncHandler(async (req, res) => {
-  const { id: userId, company_id } = req.user;
+  const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
+  // ✅ FIX: Same resolved employee_id for checkout
+  const { id: employeeId, found } = await resolveEmployeeId(userId, email);
+
+  if (!found) {
+    return res.status(400).json({
+      success: false,
+      error: "Employee record not found. Please ask your administrator to re-add you as an employee.",
+    });
+  }
+
   const { data: existing } = await supabase.from("attendance")
-    .select("id, check_in, check_out").eq("employee_id", userId).eq("date", date).single();
-  if (!existing?.check_in)  return res.status(400).json({ success: false, error: "You have not clocked in today" });
-  if (existing?.check_out)  return res.status(400).json({ success: false, error: "Already clocked out today" });
+    .select("id, check_in, check_out")
+    .eq("employee_id", employeeId)
+    .eq("date", date)
+    .single();
+  if (!existing?.check_in) return res.status(400).json({ success: false, error: "You have not clocked in today" });
+  if (existing?.check_out) return res.status(400).json({ success: false, error: "Already clocked out today" });
 
   const { latitude: lat, longitude: lng } = req.body;
   const now  = new Date();
   const mins = Math.round((now - new Date(existing.check_in)) / 60000);
 
   const { data, error } = await supabase.from("attendance").update({
-    check_out: now.toISOString(), check_out_lat: lat || null, check_out_lng: lng || null,
-    work_minutes: Math.max(0, mins),
+    check_out:     now.toISOString(),
+    check_out_lat: lat || null,
+    check_out_lng: lng || null,
+    work_minutes:  Math.max(0, mins),
   }).eq("id", existing.id).select().single();
 
   if (error) return res.status(500).json({ success: false, error: error.message });
@@ -111,19 +175,20 @@ exports.checkOut = asyncHandler(async (req, res) => {
 });
 
 exports.getTeamAttendance = asyncHandler(async (req, res) => {
-  const date         = req.query.date || todayStr();
+  const date           = req.query.date || todayStr();
   const { company_id } = req.user;
 
+  // ✅ FIX: Join with employees table (not profiles) since FK points there
   const { data: records } = await supabase
     .from("attendance")
-    .select("*, profiles!attendance_employee_id_fkey(full_name, department, avatar_initials)")
+    .select("*, employees!attendance_employee_id_fkey(name, department, avatar_initials)")
     .eq("company_id", company_id).eq("date", date)
     .order("check_in", { ascending: true });
 
   const shaped = (records||[]).map(r => ({
     ...r,
-    employee: r.profiles
-      ? { name: r.profiles.full_name, department: r.profiles.department, avatar_initials: r.profiles.avatar_initials }
+    employee: r.employees
+      ? { name: r.employees.name, department: r.employees.department, avatar_initials: r.employees.avatar_initials }
       : null,
   }));
 
@@ -133,6 +198,13 @@ exports.getTeamAttendance = asyncHandler(async (req, res) => {
   const { count: total } = await supabase.from("profiles")
     .select("*", { count: "exact", head: true }).eq("company_id", company_id).eq("is_active", true);
 
-  res.json({ success: true, date, records: shaped,
-    summary: { present, late, on_leave: onLeave, absent: Math.max(0,(total||0)-present-late-onLeave), total: total||0, rate: total ? Math.round((present+late)/total*100) : 0 } });
+  res.json({
+    success: true, date, records: shaped,
+    summary: {
+      present, late, on_leave: onLeave,
+      absent: Math.max(0, (total||0) - present - late - onLeave),
+      total: total||0,
+      rate: total ? Math.round((present + late) / total * 100) : 0,
+    },
+  });
 });
