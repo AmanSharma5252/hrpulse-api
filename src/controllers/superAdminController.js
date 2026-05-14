@@ -55,7 +55,7 @@ exports.updateCompanyPlan = [isSuperAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { plan_id, status, notes, billing_end } = req.body;
 
-  // Upsert subscription
+  // Upsert subscription and fetch plan details in one go
   const { data, error } = await supabase
     .from("company_subscriptions")
     .upsert({
@@ -68,10 +68,18 @@ exports.updateCompanyPlan = [isSuperAdmin, asyncHandler(async (req, res) => {
       updated_by: req.user.id,
       updated_at: new Date().toISOString(),
     }, { onConflict: "company_id" })
-    .select()
+    .select(`*, plans(id, name, display_name, price_monthly, features)`)
     .single();
 
   if (error) return res.status(400).json({ success: false, error: error.message });
+
+  // Notify the company's connected dashboard users in real time
+  const io = req.app.get("io");
+  io.to(`co_${id}`).emit("subscription:updated", {
+    subscription: data,
+    plan: data.plans,
+  });
+
   res.json({ success: true, subscription: data });
 })];
 
@@ -86,6 +94,11 @@ exports.updateCompanyStatus = [isSuperAdmin, asyncHandler(async (req, res) => {
     .eq("company_id", id);
 
   if (error) return res.status(400).json({ success: false, error: error.message });
+
+  // Notify the company's connected dashboard users in real time
+  const io = req.app.get("io");
+  io.to(`co_${id}`).emit("subscription:updated", { status });
+
   res.json({ success: true, message: `Company ${status}` });
 })];
 
