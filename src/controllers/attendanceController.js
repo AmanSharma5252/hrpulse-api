@@ -5,6 +5,9 @@ const { validateGPS, getOfficeLocation } = require("../utils/gps");
 const todayStr  = () => new Date().toISOString().split("T")[0];
 const getStatus = t  => (t.getHours() > 9 || (t.getHours() === 9 && t.getMinutes() > 30)) ? "late" : "present";
 
+// Work day = 8 hours = 480 minutes
+const WORK_DAY_MINUTES = 480;
+
 async function uploadSelfie(base64, userId, type = "in") {
   if (!base64) return null;
   try {
@@ -17,10 +20,8 @@ async function uploadSelfie(base64, userId, type = "in") {
   } catch { return null; }
 }
 
-// ✅ Resolve correct employee_id for attendance FK (points to employees.id)
-// Uses email as the bridge between profiles (auth) and employees (custom table)
+// Resolve correct employee_id for attendance FK (points to employees.id)
 async function resolveEmployeeId(authUserId, userEmail) {
-  // Primary: look up employees table by email
   if (userEmail) {
     const { data: emp } = await supabase
       .from("employees")
@@ -29,15 +30,12 @@ async function resolveEmployeeId(authUserId, userEmail) {
       .single();
     if (emp?.id) return { id: emp.id, found: true };
   }
-
-  // Fallback: try direct id match
   const { data: empById } = await supabase
     .from("employees")
     .select("id")
     .eq("id", authUserId)
     .single();
   if (empById?.id) return { id: empById.id, found: true };
-
   return { id: authUserId, found: false };
 }
 
@@ -85,9 +83,7 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
-  // Resolve correct employee_id via email → employees table
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
-
   if (!found) {
     return res.status(400).json({
       success: false,
@@ -95,7 +91,6 @@ exports.checkIn = asyncHandler(async (req, res) => {
     });
   }
 
-  // Check already clocked in
   const { data: existing } = await supabase.from("attendance")
     .select("id, check_in")
     .eq("employee_id", employeeId)
@@ -103,7 +98,6 @@ exports.checkIn = asyncHandler(async (req, res) => {
     .single();
   if (existing?.check_in) return res.status(400).json({ success: false, error: "Already clocked in today" });
 
-  // GPS validation
   const { latitude: lat, longitude: lng } = req.body;
   if (lat != null && lng != null) {
     const office = await getOfficeLocation(supabase, company_id);
@@ -140,7 +134,6 @@ exports.checkOut = asyncHandler(async (req, res) => {
   const date = todayStr();
 
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
-
   if (!found) {
     return res.status(400).json({
       success: false,
@@ -156,21 +149,56 @@ exports.checkOut = asyncHandler(async (req, res) => {
   if (!existing?.check_in) return res.status(400).json({ success: false, error: "You have not clocked in today" });
   if (existing?.check_out) return res.status(400).json({ success: false, error: "Already clocked out today" });
 
-  const { latitude: lat, longitude: lng } = req.body;
+  const { latitude: lat, longitude: lng, early_checkout_reason } = req.body;
   const now  = new Date();
   const mins = Math.round((now - new Date(existing.check_in)) / 60000);
 
-  const { data, error } = await supabase.from("attendance").update({
-    check_out:     now.toISOString(),
-    check_out_lat: lat || null,
-    check_out_lng: lng || null,
-    work_minutes:  Math.max(0, mins),
-  }).eq("id", existing.id).select().single();
+  // ✅ EARLY CHECKOUT LOGIC
+  const isEarly = mins < WORK_DAY_MINUTES;
+
+  // If early and no reason provided — reject and ask for reason
+  if (isEarly && !early_checkout_reason) {
+    const workedH = Math.floor(mins / 60);
+    const workedM = mins % 60;
+    const remainH = Math.floor((WORK_DAY_MINUTES - mins) / 60);
+    const remainM = (WORK_DAY_MINUTES - mins) % 60;
+    return res.status(400).json({
+      success: false,
+      early_checkout: true,   // ← frontend uses this flag to show reason modal
+      worked_minutes: mins,
+      remaining_minutes: WORK_DAY_MINUTES - mins,
+      error: `You have only worked ${workedH}h ${workedM}m. Full shift is 8 hours (${remainH}h ${remainM}m remaining). Please provide a reason for early checkout.`,
+    });
+  }
+
+  // Build update payload — remove check_out_lat/lng since columns don't exist
+  const updatePayload = {
+    check_out:            now.toISOString(),
+    early_checkout:       isEarly,
+    early_checkout_reason: isEarly ? (early_checkout_reason || null) : null,
+  };
+
+  const { data, error } = await supabase.from("attendance")
+    .update(updatePayload)
+    .eq("id", existing.id)
+    .select()
+    .single();
 
   if (error) return res.status(500).json({ success: false, error: error.message });
 
-  req.app.get("io")?.to(`co_${company_id}`).emit("attendance", { type: "check_out", user: req.user.name, work_minutes: mins });
-  res.json({ success: true, message: "Clocked out successfully", work_minutes: mins, record: data });
+  req.app.get("io")?.to(`co_${company_id}`).emit("attendance", {
+    type: "check_out", user: req.user.name, work_minutes: mins, early_checkout: isEarly,
+  });
+
+  res.json({
+    success: true,
+    message: isEarly
+      ? `Early checkout recorded — ${Math.floor(mins/60)}h ${mins%60}m worked`
+      : `Clocked out successfully — ${Math.floor(mins/60)}h ${mins%60}m worked`,
+    work_minutes: mins,
+    early_checkout: isEarly,
+    record: data,
+  });
 });
 
 exports.getTeamAttendance = asyncHandler(async (req, res) => {
