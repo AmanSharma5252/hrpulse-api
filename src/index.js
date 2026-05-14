@@ -77,7 +77,7 @@ app.use(errorHandler);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || "4000");
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n🫀  HRPulse API  →  http://localhost:${PORT}`);
   console.log(`    Mode : ${process.env.NODE_ENV || "development"}`);
   console.log(`    CORS : ${origins.join(", ")}\n`);
