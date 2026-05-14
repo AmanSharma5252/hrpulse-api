@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   employee_code     TEXT UNIQUE,
   full_name         TEXT NOT NULL,
   role              TEXT NOT NULL DEFAULT 'employee'
-                    CHECK (role IN ('employee','manager','hr','admin')),
+                    CHECK (role IN ('employee','manager','hr','admin','super_admin')),
   department        TEXT,
   title             TEXT,
   phone             TEXT,
