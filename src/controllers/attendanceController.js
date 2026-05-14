@@ -17,7 +17,7 @@ async function uploadSelfie(base64, userId, type = "in") {
   } catch { return null; }
 }
 
-// ✅ FIX: Resolve correct employee_id for attendance FK (points to employees.id)
+// ✅ Resolve correct employee_id for attendance FK (points to employees.id)
 // Uses email as the bridge between profiles (auth) and employees (custom table)
 async function resolveEmployeeId(authUserId, userEmail) {
   // Primary: look up employees table by email
@@ -85,14 +85,8 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
-  // DEBUG — remove after fix confirmed
-  console.log("=== CHECKIN DEBUG ===", { userId, email, company_id });
-
-  // ✅ FIX: Resolve correct employee_id via email → employees table
+  // Resolve correct employee_id via email → employees table
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
-
-  // DEBUG
-  console.log("=== RESOLVED ===", { employeeId, found });
 
   if (!found) {
     return res.status(400).json({
@@ -124,7 +118,7 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const status    = getStatus(now);
 
   const { data, error } = await supabase.from("attendance").upsert({
-    employee_id: employeeId,  // ✅ employees.id — satisfies FK constraint
+    employee_id: employeeId,
     company_id,
     date,
     check_in:  now.toISOString(),
@@ -145,7 +139,6 @@ exports.checkOut = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
-  // ✅ FIX: Same resolved employee_id for checkout
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
 
   if (!found) {
@@ -184,7 +177,6 @@ exports.getTeamAttendance = asyncHandler(async (req, res) => {
   const date           = req.query.date || todayStr();
   const { company_id } = req.user;
 
-  // ✅ FIX: Join with employees table (not profiles) since FK points there
   const { data: records } = await supabase
     .from("attendance")
     .select("*, employees!attendance_employee_id_fkey(name, department, avatar_initials)")
