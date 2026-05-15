@@ -54,6 +54,7 @@ async function resolveEmployeeId(authUserId, userEmail) {
       company_id:      profile.company_id || null,
       is_active:       true,
       password_hash:   "",
+      employee_code:   "EMP-" + authUserId.substring(0, 6).toUpperCase(),
     }).select("id").single();
     if (newEmp?.id) {
       console.log("Auto-created employee record for:", userEmail);
