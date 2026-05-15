@@ -11,4 +11,6 @@ router.post("/refresh",  ctrl.refresh);
 router.post("/logout",   protect, ctrl.logout);
 router.get ("/me",       protect, ctrl.me);
 router.patch("/password",protect, validate(schemas.changePw), ctrl.changePassword);
+router.patch("/profile", protect, ctrl.updateProfile);
+
 module.exports = router;

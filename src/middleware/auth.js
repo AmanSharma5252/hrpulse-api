@@ -71,4 +71,3 @@ exports.authorize = (...roles) => (req, res, next) => {
       .json({ success: false, error: `Access denied. Required: ${roles.join(", ")}` });
   return next();
 };
-router.patch("/profile", protect, authCtrl.updateProfile);
