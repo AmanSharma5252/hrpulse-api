@@ -44,11 +44,12 @@ const schemas = {
     note:          Joi.string().max(300).optional().allow("", null),
   }),
   clockOut: Joi.object({
-    latitude:      Joi.number().min(-90).max(90).optional().allow(null),
-    longitude:     Joi.number().min(-180).max(180).optional().allow(null),
-    selfie_base64: Joi.string().optional().allow("", null),
-    note:          Joi.string().max(300).optional().allow("", null),
-  }),
+  latitude:              Joi.number().min(-90).max(90).optional().allow(null),
+  longitude:             Joi.number().min(-180).max(180).optional().allow(null),
+  selfie_base64:         Joi.string().optional().allow("", null),
+  note:                  Joi.string().max(300).optional().allow("", null),
+  early_checkout_reason: Joi.string().max(500).optional().allow("", null),  // ← ADD THIS
+}),
   applyLeave: Joi.object({
     leave_type_id: Joi.string().uuid().required(),
     start_date:    Joi.string().isoDate().required(),
