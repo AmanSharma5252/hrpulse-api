@@ -23,18 +23,20 @@ async function uploadSelfie(base64, userId, type = "in") {
 // Resolve correct employee_id for attendance FK (points to employees.id)
 async function resolveEmployeeId(authUserId, userEmail) {
   if (userEmail) {
-    const { data: emp } = await supabase
+    const { data: emp, error: empErr } = await supabase
       .from("employees")
       .select("id")
       .eq("email", userEmail)
       .single();
+    console.log("resolveEmployeeId by email:", userEmail, "result:", emp, "error:", empErr?.message);
     if (emp?.id) return { id: emp.id, found: true };
   }
-  const { data: empById } = await supabase
+  const { data: empById, error: empByIdErr } = await supabase
     .from("employees")
     .select("id")
     .eq("id", authUserId)
     .single();
+  console.log("resolveEmployeeId by id:", authUserId, "result:", empById, "error:", empByIdErr?.message);
   if (empById?.id) return { id: empById.id, found: true };
   return { id: authUserId, found: false };
 }
