@@ -2,7 +2,11 @@ const supabase     = require("../config/supabase");
 const asyncHandler = require("../utils/asyncHandler");
 const { validateGPS, getOfficeLocation } = require("../utils/gps");
 
-const todayStr  = () => new Date().toISOString().split("T")[0];
+const todayStr  = () => {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  return ist.toISOString().split("T")[0];
+};
 const getStatus = t  => (t.getHours() > 9 || (t.getHours() === 9 && t.getMinutes() > 30)) ? "late" : "present";
 
 // Work day = 8 hours = 480 minutes
