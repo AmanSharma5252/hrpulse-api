@@ -68,7 +68,8 @@ exports.create = asyncHandler(async (req, res) => {
     hire_date:         hire_date || null,
     avatar_initials:   avatarInitials,
     is_active:         true,
-    password:          "", // hashed password not stored here
+    company_id:        companyId,   // ✅ CRITICAL: must include company_id
+    password_hash:     "",
   }).select("id").single();
 
   if (empErr) {

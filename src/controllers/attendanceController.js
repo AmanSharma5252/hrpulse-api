@@ -22,22 +22,44 @@ async function uploadSelfie(base64, userId, type = "in") {
 
 // Resolve correct employee_id for attendance FK (points to employees.id)
 async function resolveEmployeeId(authUserId, userEmail) {
+  // First try by email
   if (userEmail) {
-    const { data: emp, error: empErr } = await supabase
+    const { data: emp } = await supabase
       .from("employees")
       .select("id")
       .eq("email", userEmail)
       .single();
-    console.log("resolveEmployeeId by email:", userEmail, "result:", emp, "error:", empErr?.message);
     if (emp?.id) return { id: emp.id, found: true };
   }
-  const { data: empById, error: empByIdErr } = await supabase
+  // Then try by auth user id directly
+  const { data: empById } = await supabase
     .from("employees")
     .select("id")
     .eq("id", authUserId)
     .single();
-  console.log("resolveEmployeeId by id:", authUserId, "result:", empById, "error:", empByIdErr?.message);
   if (empById?.id) return { id: empById.id, found: true };
+  // Last resort: auto-create employee record from profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, role, department, company_id, avatar_initials")
+    .eq("id", authUserId)
+    .single();
+  if (profile && userEmail) {
+    const { data: newEmp } = await supabase.from("employees").insert({
+      name:            profile.full_name || userEmail,
+      email:           userEmail,
+      role:            profile.role || "employee",
+      department:      profile.department || null,
+      avatar_initials: profile.avatar_initials || "?",
+      company_id:      profile.company_id || null,
+      is_active:       true,
+      password_hash:   "",
+    }).select("id").single();
+    if (newEmp?.id) {
+      console.log("Auto-created employee record for:", userEmail);
+      return { id: newEmp.id, found: true };
+    }
+  }
   return { id: authUserId, found: false };
 }
 
