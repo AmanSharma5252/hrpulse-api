@@ -20,49 +20,36 @@ async function uploadSelfie(base64, userId, type = "in") {
   } catch { return null; }
 }
 
-// Resolve correct employee_id for attendance FK (points to employees.id)
+// Resolve correct employee_id — always returns an ID, never blocks
 async function resolveEmployeeId(authUserId, userEmail) {
-  // First try by email
+  // Try by email first
   if (userEmail) {
     const { data: emp } = await supabase
-      .from("employees")
-      .select("id")
-      .eq("email", userEmail)
-      .single();
-    if (emp?.id) return { id: emp.id, found: true };
+      .from("employees").select("id").eq("email", userEmail).single();
+    if (emp?.id) return emp.id;
   }
-  // Then try by auth user id directly
+  // Try by auth user id directly (IDs should match after sync)
   const { data: empById } = await supabase
-    .from("employees")
-    .select("id")
-    .eq("id", authUserId)
-    .single();
-  if (empById?.id) return { id: empById.id, found: true };
-  // Last resort: auto-create employee record from profile
+    .from("employees").select("id").eq("id", authUserId).single();
+  if (empById?.id) return empById.id;
+  // Last resort: auto-create
   const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role, department, company_id, avatar_initials")
-    .eq("id", authUserId)
-    .single();
+    .from("profiles").select("full_name, role, department, company_id, avatar_initials")
+    .eq("id", authUserId).single();
   if (profile && userEmail) {
+    const empCode = "EMP-" + authUserId.substring(0, 6).toUpperCase();
     const { data: newEmp } = await supabase.from("employees").insert({
-      id:              authUserId,   // ← CRITICAL: match auth user ID
-      name:            profile.full_name || userEmail,
-      email:           userEmail,
-      role:            profile.role || "employee",
-      department:      profile.department || null,
+      id: authUserId, name: profile.full_name || userEmail,
+      email: userEmail, role: profile.role || "employee",
+      department: profile.department || null,
       avatar_initials: profile.avatar_initials || "?",
-      company_id:      profile.company_id || null,
-      is_active:       true,
-      password_hash:   "",
-      employee_code:   "EMP-" + authUserId.substring(0, 6).toUpperCase(),
+      company_id: profile.company_id || null,
+      is_active: true, password_hash: "", employee_code: empCode,
     }).select("id").single();
-    if (newEmp?.id) {
-      console.log("Auto-created employee record for:", userEmail);
-      return { id: newEmp.id, found: true };
-    }
+    if (newEmp?.id) return newEmp.id;
   }
-  return { id: authUserId, found: false };
+  // Final fallback — use auth user ID directly
+  return authUserId;
 }
 
 exports.getMyAttendance = asyncHandler(async (req, res) => {
@@ -73,7 +60,7 @@ exports.getMyAttendance = asyncHandler(async (req, res) => {
   const from  = `${year}-${String(month).padStart(2,"0")}-01`;
   const to    = `${year}-${String(month).padStart(2,"0")}-31`;
 
-  const { id: employeeId } = await resolveEmployeeId(req.user.id, req.user.email);
+  const employeeId = await resolveEmployeeId(req.user.id, req.user.email);
 
   const { data, error } = await supabase.from("attendance").select("*")
     .eq("employee_id", employeeId)
@@ -91,7 +78,7 @@ exports.getMySummary = asyncHandler(async (req, res) => {
   const from  = `${year}-${String(month).padStart(2,"0")}-01`;
   const to    = `${year}-${String(month).padStart(2,"0")}-31`;
 
-  const { id: employeeId } = await resolveEmployeeId(req.user.id, req.user.email);
+  const employeeId = await resolveEmployeeId(req.user.id, req.user.email);
 
   const { data } = await supabase.from("attendance").select("status, work_minutes")
     .eq("employee_id", employeeId).gte("date", from).lte("date", to);
@@ -109,13 +96,7 @@ exports.checkIn = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
   const date = todayStr();
 
-  const { id: employeeId, found } = await resolveEmployeeId(userId, email);
-  if (!found) {
-    return res.status(400).json({
-      success: false,
-      error: "Employee record not found. Please ask your administrator to re-add you as an employee.",
-    });
-  }
+  const employeeId = await resolveEmployeeId(userId, email);
 
   const { data: existing } = await supabase.from("attendance")
     .select("id, check_in")
@@ -157,16 +138,9 @@ exports.checkIn = asyncHandler(async (req, res) => {
 
 exports.checkOut = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
-  console.log("CHECKOUT:", email, "body:", JSON.stringify(req.body));
   const date = todayStr();
 
-  const { id: employeeId, found } = await resolveEmployeeId(userId, email);
-  if (!found) {
-    return res.status(400).json({
-      success: false,
-      error: "Employee record not found. Please ask your administrator to re-add you as an employee.",
-    });
-  }
+  const employeeId = await resolveEmployeeId(userId, email);
 
   const { data: existing } = await supabase.from("attendance")
     .select("id, check_in, check_out")
