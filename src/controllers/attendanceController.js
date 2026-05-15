@@ -157,6 +157,7 @@ exports.checkIn = asyncHandler(async (req, res) => {
 
 exports.checkOut = asyncHandler(async (req, res) => {
   const { id: userId, company_id, email } = req.user;
+  console.log("CHECKOUT:", email, "body:", JSON.stringify(req.body));
   const date = todayStr();
 
   const { id: employeeId, found } = await resolveEmployeeId(userId, email);
