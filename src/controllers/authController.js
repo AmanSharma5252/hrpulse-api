@@ -308,3 +308,12 @@ exports.onboardCompany = asyncHandler(async (req, res) => {
     admin:   { id: authData.user.id, email: adminEmail, name: adminName },
   });
 });
+exports.updateProfile = asyncHandler(async (req, res) => {
+  const { id } = req.user;
+  const allowed = ["address","pan_number","aadhaar_number","bank_account_number","bank_ifsc","bank_name","bank_account_holder"];
+  const updates = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+  const { error } = await supabase.from("profiles").update(updates).eq("id", id);
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  res.json({ success: true, message: "Profile updated" });
+});

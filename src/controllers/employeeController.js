@@ -221,3 +221,11 @@ exports.deactivate = asyncHandler(async (req, res) => {
 
   res.json({ success: true, message: "Employee deactivated" });
 });
+exports.getEmployeeProfile = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase.from("profiles")
+    .select("bank_account_number, bank_ifsc, bank_name, bank_account_holder, address, pan_number, aadhaar_number")
+    .eq("id", id).single();
+  if (error) return res.status(404).json({ success: false, error: "Profile not found" });
+  res.json({ success: true, profile: data });
+});

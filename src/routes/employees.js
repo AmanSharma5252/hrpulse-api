@@ -6,6 +6,7 @@ const { validate, schemas }  = require("../middleware/validate");
 const router = Router();
 router.use(protect);
 router.get   ("/",    authorize("admin","hr","manager","super_admin"), ctrl.list);
+router.get("/:id/profile", protect, authorize("admin","hr"), ctrl.getEmployeeProfile);
 router.post  ("/",    authorize("admin","hr","super_admin"),           validate(schemas.addEmployee),    ctrl.create);
 router.patch ("/:id", authorize("admin","hr","super_admin"),           validate(schemas.updateEmployee), ctrl.update);
 router.delete("/:id", authorize("admin","super_admin"),                ctrl.deactivate);
