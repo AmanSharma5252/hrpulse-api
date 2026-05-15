@@ -46,6 +46,7 @@ async function resolveEmployeeId(authUserId, userEmail) {
     .single();
   if (profile && userEmail) {
     const { data: newEmp } = await supabase.from("employees").insert({
+      id:              authUserId,   // ← CRITICAL: match auth user ID
       name:            profile.full_name || userEmail,
       email:           userEmail,
       role:            profile.role || "employee",
