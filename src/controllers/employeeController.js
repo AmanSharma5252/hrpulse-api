@@ -6,8 +6,8 @@ exports.list = asyncHandler(async (req, res) => {
   const { is_active = "true", limit = 500 } = req.query;
   const isSuperAdmin = role === "super_admin";
 
-  let q = supabase.from("profiles").select("*", { count: "exact" })
-    .order("full_name").limit(+limit);
+  let q = supabase.from("employees").select("*", { count: "exact" })
+    .order("name").limit(+limit);
   if (!isSuperAdmin) q = q.eq("company_id", company_id);
   if (is_active !== "all") q = q.eq("is_active", is_active === "true");
 
@@ -17,8 +17,8 @@ exports.list = asyncHandler(async (req, res) => {
   const employees = (data||[]).map(p => ({
     id:                p.id,
     employee_code:     p.employee_code,
-    name:              p.full_name,
-    email:             "",
+    name:              p.name,
+    email:             p.email || "",
     role:              p.role,
     department:        p.department,
     title:             p.title,
@@ -56,8 +56,10 @@ exports.create = asyncHandler(async (req, res) => {
     avatar_initials: avatarInitials,
   }).eq("id", authUserId);
 
-  // 3. ✅ FIX: Also insert into employees table so attendance FK works
+  // 3. ✅ PERMANENT FIX: Insert into employees table using authUserId as id
+  // This ensures employees.id always matches auth.users.id — no more ID mismatch!
   const { data: empRow, error: empErr } = await supabase.from("employees").insert({
+    id:                authUserId,   // ← CRITICAL: use auth user ID
     name,
     email,
     role:              role || "employee",
@@ -68,8 +70,9 @@ exports.create = asyncHandler(async (req, res) => {
     hire_date:         hire_date || null,
     avatar_initials:   avatarInitials,
     is_active:         true,
-    company_id:        companyId,   // ✅ CRITICAL: must include company_id
+    company_id:        companyId,
     password_hash:     "",
+    employee_code:     "EMP-" + authUserId.substring(0, 6).toUpperCase(),
   }).select("id").single();
 
   if (empErr) {
