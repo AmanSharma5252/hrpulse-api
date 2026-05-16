@@ -28,11 +28,11 @@ exports.list = asyncHandler(async (req, res) => {
     hire_date:         p.hire_date,
     is_active:         p.is_active,
     company_id:        p.company_id,
-    base_salary:       p.base_salary  || 0,
-    hra_pct:           p.hra_pct      || 0,
-    ta_amount:         p.ta_amount    || 0,
-    pf_pct:            p.pf_pct       || 0,
-    tax_pct:           p.tax_pct      || 0,
+    base_salary:       p.base_salary  != null ? +p.base_salary : 0,
+    hra_pct:           p.hra_pct      != null ? +p.hra_pct     : 0,
+    ta_amount:         p.ta_amount    != null ? +p.ta_amount   : 0,
+    pf_pct:            p.pf_pct       != null ? +p.pf_pct      : 0,
+    tax_pct:           p.tax_pct      != null ? +p.tax_pct     : 0,
   }));
 
   res.json({ success: true, employees, total: count });
@@ -151,41 +151,53 @@ exports.create = asyncHandler(async (req, res) => {
 
 exports.update = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const body = req.body;
+
+  console.log("UPDATE id:", id, "body:", JSON.stringify(body));
+
   const {
     name, role, department, title, phone, emergency_contact, hire_date,
     base_salary, hra_pct, ta_amount, pf_pct, tax_pct,
-  } = req.body;
+  } = body;
 
   if (role === "super_admin" && req.user.role !== "super_admin") {
     return res.status(403).json({ success: false, error: "Only super_admin can assign super_admin role" });
   }
 
   const profileUpdates = { updated_at: new Date().toISOString() };
-  if (name)                       profileUpdates.full_name          = name;
-  if (role)                       profileUpdates.role               = role;
-  if (department        != null)  profileUpdates.department         = department;
-  if (title             != null)  profileUpdates.title              = title;
-  if (phone             != null)  profileUpdates.phone              = phone;
-  if (emergency_contact != null)  profileUpdates.emergency_contact  = emergency_contact;
-  if (hire_date         != null)  profileUpdates.hire_date          = hire_date;
-  if (base_salary       != null)  profileUpdates.base_salary        = +base_salary;
-  if (hra_pct           != null)  profileUpdates.hra_pct            = +hra_pct;
-  if (ta_amount         != null)  profileUpdates.ta_amount          = +ta_amount;
-  if (pf_pct            != null)  profileUpdates.pf_pct             = +pf_pct;
-  if (tax_pct           != null)  profileUpdates.tax_pct            = +tax_pct;
+  if (name              !== undefined) profileUpdates.full_name          = name;
+  if (role              !== undefined) profileUpdates.role               = role;
+  if (department        !== undefined) profileUpdates.department         = department;
+  if (title             !== undefined) profileUpdates.title              = title;
+  if (phone             !== undefined) profileUpdates.phone              = phone;
+  if (emergency_contact !== undefined) profileUpdates.emergency_contact  = emergency_contact;
+  if (hire_date         !== undefined) profileUpdates.hire_date          = hire_date;
+
+  // ← KEY FIX: use !== undefined so 0 values are saved correctly
+  if (base_salary !== undefined) profileUpdates.base_salary = base_salary === "" ? 0 : +base_salary;
+  if (hra_pct     !== undefined) profileUpdates.hra_pct     = hra_pct     === "" ? 0 : +hra_pct;
+  if (ta_amount   !== undefined) profileUpdates.ta_amount   = ta_amount   === "" ? 0 : +ta_amount;
+  if (pf_pct      !== undefined) profileUpdates.pf_pct      = pf_pct      === "" ? 0 : +pf_pct;
+  if (tax_pct     !== undefined) profileUpdates.tax_pct     = tax_pct     === "" ? 0 : +tax_pct;
+
+  console.log("profileUpdates:", JSON.stringify(profileUpdates));
 
   const { data, error } = await supabase
     .from("profiles").update(profileUpdates).eq("id", id).select().single();
+
+  console.log("Supabase result:", JSON.stringify({ data, error }));
+
   if (error) return res.status(500).json({ success: false, error: error.message });
 
+  // Update employees table for non-salary fields
   const empUpdates = {};
-  if (name)              empUpdates.name              = name;
-  if (role)              empUpdates.role              = role;
-  if (department)        empUpdates.department        = department;
-  if (title)             empUpdates.title             = title;
-  if (phone)             empUpdates.phone             = phone;
-  if (emergency_contact) empUpdates.emergency_contact = emergency_contact;
-  if (hire_date)         empUpdates.hire_date         = hire_date;
+  if (name              !== undefined) empUpdates.name              = name;
+  if (role              !== undefined) empUpdates.role              = role;
+  if (department        !== undefined) empUpdates.department        = department;
+  if (title             !== undefined) empUpdates.title             = title;
+  if (phone             !== undefined) empUpdates.phone             = phone;
+  if (emergency_contact !== undefined) empUpdates.emergency_contact = emergency_contact;
+  if (hire_date         !== undefined) empUpdates.hire_date         = hire_date;
 
   if (Object.keys(empUpdates).length) {
     const { error: empUpdateErr } = await supabase
@@ -210,11 +222,11 @@ exports.update = asyncHandler(async (req, res) => {
       avatar_initials:   data.avatar_initials,
       hire_date:         data.hire_date,
       is_active:         data.is_active,
-      base_salary:       data.base_salary  || 0,
-      hra_pct:           data.hra_pct      || 0,
-      ta_amount:         data.ta_amount    || 0,
-      pf_pct:            data.pf_pct       || 0,
-      tax_pct:           data.tax_pct      || 0,
+      base_salary:       data.base_salary != null ? +data.base_salary : 0,
+      hra_pct:           data.hra_pct     != null ? +data.hra_pct     : 0,
+      ta_amount:         data.ta_amount   != null ? +data.ta_amount   : 0,
+      pf_pct:            data.pf_pct      != null ? +data.pf_pct      : 0,
+      tax_pct:           data.tax_pct     != null ? +data.tax_pct     : 0,
     },
   });
 });
