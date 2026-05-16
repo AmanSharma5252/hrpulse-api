@@ -73,14 +73,19 @@ const schemas = {
     company_id:        Joi.string().uuid().optional().allow("", null),
   }),
   updateEmployee: Joi.object({
-    name:              Joi.string().min(2).max(100).optional(),
-    role:              Joi.string().valid("employee","manager","hr","admin").optional(),
-    department:        Joi.string().optional().allow("", null),
-    title:             Joi.string().optional().allow("", null),
-    phone:             Joi.string().optional().allow("", null),
-    emergency_contact: Joi.string().optional().allow("", null),
-    hire_date:         Joi.string().isoDate().optional().allow("", null),
-  }),
+  name:              Joi.string().min(2).max(100).optional(),
+  role:              Joi.string().valid("employee","manager","hr","admin").optional(),
+  department:        Joi.string().optional().allow("", null),
+  title:             Joi.string().optional().allow("", null),
+  phone:             Joi.string().optional().allow("", null),
+  emergency_contact: Joi.string().optional().allow("", null),
+  hire_date:         Joi.string().isoDate().optional().allow("", null),
+  base_salary:       Joi.number().min(0).optional().allow(null),
+  hra_pct:           Joi.number().min(0).max(100).optional().allow(null),
+  ta_amount:         Joi.number().min(0).optional().allow(null),
+  pf_pct:            Joi.number().min(0).max(100).optional().allow(null),
+  tax_pct:           Joi.number().min(0).max(100).optional().allow(null),
+}),
 };
 
 module.exports = { upload, validate, schemas };
