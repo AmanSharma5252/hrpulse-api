@@ -204,17 +204,16 @@ exports.getEmployeeSalaries = asyncHandler(async (req, res) => {
 // PATCH /api/v1/payroll/employees/:id/salary
 exports.updateSalary = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { basic_salary, hra_pct, ta_amount, special_allowance, bonus, bank_account, bank_ifsc, bank_name } = req.body;
+  const { basic_salary, hra_pct, ta_amount, special_allowance, bonus } = req.body;
 
   const updates = {};
-  if (basic_salary      != null) updates.basic_salary      = parseFloat(basic_salary) || 0;
-  if (hra_pct           != null) updates.hra_pct           = parseFloat(hra_pct) || 0;
-  if (ta_amount         != null) updates.ta_amount         = parseFloat(ta_amount) || 0;
-  if (special_allowance != null) updates.special_allowance = parseFloat(special_allowance) || 0;
-  if (bonus             != null) updates.bonus             = parseFloat(bonus) || 0;
-  if (bank_account      != null) updates.bank_account      = bank_account;
-  if (bank_ifsc         != null) updates.bank_ifsc         = bank_ifsc;
-  if (bank_name         != null) updates.bank_name         = bank_name;
+  if (basic_salary      != null) updates.base_salary = parseFloat(basic_salary) || 0;
+  if (hra_pct           != null) updates.hra_pct     = parseFloat(hra_pct)      || 0;
+  if (ta_amount         != null) updates.ta_amount   = parseFloat(ta_amount)    || 0;
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ success: false, error: "No fields to update" });
+  }
 
   const { error } = await supabase
     .from("profiles")
