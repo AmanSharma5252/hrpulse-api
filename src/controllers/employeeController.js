@@ -28,6 +28,11 @@ exports.list = asyncHandler(async (req, res) => {
     hire_date:         p.hire_date,
     is_active:         p.is_active,
     company_id:        p.company_id,
+    base_salary:       p.base_salary  || 0,
+    hra_pct:           p.hra_pct      || 0,
+    ta_amount:         p.ta_amount    || 0,
+    pf_pct:            p.pf_pct       || 0,
+    tax_pct:           p.tax_pct      || 0,
   }));
 
   res.json({ success: true, employees, total: count });
@@ -42,7 +47,6 @@ exports.create = asyncHandler(async (req, res) => {
   const companyId       = company_id || req.user.company_id || null;
   const avatarInitials  = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
-  // ── 1. Create Supabase Auth user ──────────────────────────────────────────
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -51,9 +55,8 @@ exports.create = asyncHandler(async (req, res) => {
   });
   if (authError) return res.status(400).json({ success: false, error: authError.message });
 
-  const authUserId = authData.user.id; // ← this is the UUID we must link everywhere
+  const authUserId = authData.user.id;
 
-  // ── 2. Update profiles table (trigger may have already inserted a row) ────
   const { error: profileError } = await supabase.from("profiles").update({
     full_name:         name,
     role:              role || "employee",
@@ -71,15 +74,11 @@ exports.create = asyncHandler(async (req, res) => {
     console.error("Warning: Could not update profiles table:", profileError.message);
   }
 
-  // ── 3. ✅ FIX: Upsert into employees table WITH user_id = authUserId ──────
-  //    This is the column that attendance / dashboard controllers use to look
-  //    up the employee for the logged-in user.  Without it the FK join fails
-  //    and the "Employee record not found" error is thrown.
   const { data: empRow, error: empErr } = await supabase
     .from("employees")
     .upsert(
       {
-        user_id:           authUserId,   // ← THE CRITICAL LINK
+        user_id:           authUserId,
         name,
         email,
         role:              role              || "employee",
@@ -92,16 +91,13 @@ exports.create = asyncHandler(async (req, res) => {
         company_id:        companyId,
         is_active:         true,
       },
-      { onConflict: "user_id" }          // safe to re-run; won't duplicate
+      { onConflict: "user_id" }
     )
     .select("id")
     .single();
 
   if (empErr) {
-    // Log the real error so you can see it in server logs
     console.error("ERROR: Could not upsert into employees table:", empErr.message);
-    // Return a clear error instead of silently continuing — otherwise
-    // checkin/attendance will keep returning 400 "Employee record not found"
     return res.status(500).json({
       success: false,
       error:   "Employee auth account was created but employee profile could not be saved. " +
@@ -111,7 +107,6 @@ exports.create = asyncHandler(async (req, res) => {
 
   const employeeTableId = empRow?.id || null;
 
-  // ── 4. Seed leave balances (keyed on authUserId = profiles FK) ───────────
   const { data: ltypes } = await supabase.from("leave_types").select("id, default_days");
   if (ltypes?.length) {
     const year     = new Date().getFullYear();
@@ -145,19 +140,26 @@ exports.create = asyncHandler(async (req, res) => {
       avatar_initials:   avatarInitials,
       hire_date,
       is_active:         true,
+      base_salary:       0,
+      hra_pct:           0,
+      ta_amount:         0,
+      pf_pct:            0,
+      tax_pct:           0,
     },
   });
 });
 
 exports.update = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, role, department, title, phone, emergency_contact, hire_date } = req.body;
+  const {
+    name, role, department, title, phone, emergency_contact, hire_date,
+    base_salary, hra_pct, ta_amount, pf_pct, tax_pct,
+  } = req.body;
 
   if (role === "super_admin" && req.user.role !== "super_admin") {
     return res.status(403).json({ success: false, error: "Only super_admin can assign super_admin role" });
   }
 
-  // ── Update profiles ───────────────────────────────────────────────────────
   const profileUpdates = { updated_at: new Date().toISOString() };
   if (name)                       profileUpdates.full_name          = name;
   if (role)                       profileUpdates.role               = role;
@@ -166,12 +168,16 @@ exports.update = asyncHandler(async (req, res) => {
   if (phone             != null)  profileUpdates.phone              = phone;
   if (emergency_contact != null)  profileUpdates.emergency_contact  = emergency_contact;
   if (hire_date         != null)  profileUpdates.hire_date          = hire_date;
+  if (base_salary       != null)  profileUpdates.base_salary        = +base_salary;
+  if (hra_pct           != null)  profileUpdates.hra_pct            = +hra_pct;
+  if (ta_amount         != null)  profileUpdates.ta_amount          = +ta_amount;
+  if (pf_pct            != null)  profileUpdates.pf_pct             = +pf_pct;
+  if (tax_pct           != null)  profileUpdates.tax_pct            = +tax_pct;
 
   const { data, error } = await supabase
     .from("profiles").update(profileUpdates).eq("id", id).select().single();
   if (error) return res.status(500).json({ success: false, error: error.message });
 
-  // ── ✅ FIX: Update employees table matched by user_id (not employees.id) ──
   const empUpdates = {};
   if (name)              empUpdates.name              = name;
   if (role)              empUpdates.role              = role;
@@ -182,7 +188,6 @@ exports.update = asyncHandler(async (req, res) => {
   if (hire_date)         empUpdates.hire_date         = hire_date;
 
   if (Object.keys(empUpdates).length) {
-    // Match on user_id column, not the employees primary key
     const { error: empUpdateErr } = await supabase
       .from("employees").update(empUpdates).eq("user_id", id);
     if (empUpdateErr) {
@@ -205,6 +210,11 @@ exports.update = asyncHandler(async (req, res) => {
       avatar_initials:   data.avatar_initials,
       hire_date:         data.hire_date,
       is_active:         data.is_active,
+      base_salary:       data.base_salary  || 0,
+      hra_pct:           data.hra_pct      || 0,
+      ta_amount:         data.ta_amount    || 0,
+      pf_pct:            data.pf_pct       || 0,
+      tax_pct:           data.tax_pct      || 0,
     },
   });
 });
@@ -215,12 +225,12 @@ exports.deactivate = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: "Cannot deactivate yourself" });
   }
 
-  // Deactivate in both tables — employees matched by user_id
   await supabase.from("profiles").update({ is_active: false }).eq("id", id);
   await supabase.from("employees").update({ is_active: false }).eq("user_id", id);
 
   res.json({ success: true, message: "Employee deactivated" });
 });
+
 exports.getEmployeeProfile = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { data, error } = await supabase.from("profiles")
